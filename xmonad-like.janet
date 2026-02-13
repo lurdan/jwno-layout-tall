@@ -60,7 +60,8 @@
     (k "${MOD} + Shift + Q" :quit)
     (k "${MOD} + N"         :retile)
     (k "${MOD} + Shift + C" :close-window-or-frame)
-    (k "${MOD} + Enter"     :tall-swap-master)
+    (k "${MOD} + Enter"     :swap-master)
+    (k "${MOD} + Space"     :toggle-maximize)
 
     (k (string "${MOD} + " (in dir-keys :down))  [:enum-frame :next])
     (k (string "${MOD} + " (in dir-keys :up))    [:enum-frame :prev])
@@ -104,86 +105,7 @@
 (def root-keymap (build-keymap key-man))
 (:set-keymap key-man root-keymap)
 
-# xmonad-like workspace
-# cf. https://github.com/agent-kilo/jwno/discussions/10
-(ffi/context "VirtualDesktopAccessor.dll")
-
-(ffi/defbind GoToDesktopNumber :uint32 [n :uint32])
-(ffi/defbind MoveWindowToDesktopNumber :uint32 [hwnd :ptr n :uint32])
-(ffi/defbind GetCurrentDesktopNumber :uint32 [])
-(ffi/defbind GetDesktopCount :uint32 [])
-(ffi/defbind CreateDesktop :uint32 [])
-
-(while (< (GetDesktopCount) 9)
-  (CreateDesktop))
-
-(:add-command command-man :set-desktop
-  (fn [n]
-    (cond
-      (= (GetCurrentDesktopNumber) n)
-        (log/info (string "Already on Desktop " (+ n 1)))
-      (< (GetDesktopCount) (+ n 1))
-        (log/info (string "Desktop " (+ n 1) " unavailable"))
-      (do
-        (GoToDesktopNumber n)
-        (log/info (string "Desktop " (+ n 1)))))))
-
-(:add-command command-man :move-to-desktop
-  (fn [n]
-    (cond
-      (= (GetCurrentDesktopNumber) n)
-        (log/info (string "Already on Desktop " (+ n 1)))
-      (< (GetDesktopCount) (+ n 1))
-        (log/info (string "Desktop " (+ n 1) " unavailable"))
-      (when-let [cur-fr (:get-current-frame (in window-man :root))
-                 cur-win (:get-current-window cur-fr)
-                 hwnd (in cur-win :hwnd)]
-        (MoveWindowToDesktopNumber hwnd n)
-        # FIXME: old frame be left, call tall-on-window-removed?
-        (:retile window-man (:get-top-frame cur-fr))
-        # FIXME: moved window should be controlled
-        # (GoToDesktopNumber n)
-        (def vd-info (:get-hwnd-virtual-desktop window-man hwnd))
-        (def new-fr (:get-current-frame-on-desktop (in window-man :root) vd-info))
-        (:add-child new-fr cur-win)
-        (:activate cur-win)
-        (log/info (string "Desktop " (+ n 1)))))))
-
 # xmonad-like Tall layout
 (import layout-tall)
 (def layout-tall (layout-tall/tall jwno/context))
 (:enable layout-tall)
-
-(:add-command command-man :tall-swap-master
-   (fn []
-     (def {:window-manager window-man} jwno/context)
-
-     (var cur-frame (:get-current-frame (in window-man :root)))
-     (unless cur-frame
-       (break))
-
-     (var top-frame (:get-top-frame cur-frame))
-     (var master-frame (get-in top-frame [:children 0]))
-     (var stack-frame (get-in top-frame [:children 1]))
-
-     (unless (and master-frame stack-frame)
-       (break))
-
-     (var focused (:get-current-window cur-frame))
-     (unless focused
-       (break))
-
-     (var master-win (:get-current-window master-frame))
-     (unless master-win
-       (break))
-
-     (when (= focused master-win)
-       (break))
-
-     (:remove-child cur-frame focused)
-     (:remove-child master-frame master-win)
-     (:add-child master-frame focused)
-     (:add-child cur-frame master-win)
-
-     (:retile window-man top-frame)
-     (:activate focused)))
