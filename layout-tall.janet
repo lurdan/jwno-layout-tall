@@ -72,9 +72,7 @@
          (ev/spawn
           (:retile window-man stack))))))
 
-(defn tall-on-window-removed [self win]
-  (def {:window-manager window-man} self)
-
+(defn tall-cleanup-frame [window-man win]
   (var frame (in win :parent))
   (unless (:attached? frame)
     (break))
@@ -89,7 +87,7 @@
   # when master window closed
   (when (= frame master-frame)
     # move stack window to master
-    (var second-frame (get-in stack-frame[:children 0]))
+    (var second-frame (get-in stack-frame [:children 0]))
     (var stack-win (:get-current-window second-frame))
     (when stack-win
       (:remove-child stack-frame stack-win)
@@ -109,6 +107,10 @@
     # ev/spawn to put the :retile call in the event queue
     (ev/spawn
      (:retile window-man to-retile))))
+
+(defn tall-on-window-removed [self win]
+  (def {:window-manager window-man} self)
+  (tall-cleanup-frame window-man win))
 
 ### Window control functions
 
@@ -186,14 +188,14 @@
                cur-win (:get-current-window cur-fr)
                hwnd (in cur-win :hwnd)]
       (MoveWindowToDesktopNumber hwnd n)
-      # FIXME: old frame be left, call tall-on-window-removed?
-      (:retile window-man (:get-top-frame cur-fr))
-      # FIXME: moved window should be controlled
-      # (GoToDesktopNumber n)
+      (:remove-child cur-fr cur-win)
+      (tall-cleanup-frame window-man cur-win)
       (def vd-info (:get-hwnd-virtual-desktop window-man hwnd))
       (def new-fr (:get-current-frame-on-desktop (in window-man :root) vd-info))
       (:add-child new-fr cur-win)
       (:activate cur-win)
+      (:retile window-man (:get-top-frame  new-fr))
+      # (GoToDesktopNumber n)
       (log/info (string "Desktop " (+ n 1))))))
 
 ### Layout management
