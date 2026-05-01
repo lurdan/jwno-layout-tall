@@ -72,9 +72,7 @@
          (ev/spawn
           (:retile window-man stack))))))
 
-(defn tall-on-window-removed [self win]
-  (def {:window-manager window-man} self)
-
+(defn tall-cleanup-layout [window-man win]
   (var frame (in win :parent))
   (unless (:attached? frame)
     (break))
@@ -92,23 +90,41 @@
     (var second-frame (get-in stack-frame[:children 0]))
     (var stack-win (:get-current-window second-frame))
     (when stack-win
-      (:remove-child stack-frame stack-win)
+      (:remove-child second-frame stack-win)
       (:add-child master-frame stack-win)
       (:retile window-man top-frame)
       (set frame second-frame)
       ))
 
   # delete unused frame
-  (when (and (empty? (in frame :children))
+  (when (and (nil? (:get-current-window frame))
+             (empty? (in frame :children))
              # Don't touch the top-level frame
              (nil? (in frame :monitor)))
+    (def to-retile (in frame :parent))
     (util/with-activation-hooks window-man
                                 (:close frame))
-    (def to-retile (in frame :parent))
     (:layouts-changed window-man [(:get-layout to-retile)])
     # ev/spawn to put the :retile call in the event queue
     (ev/spawn
-     (:retile window-man to-retile))))
+     (:retile window-man to-retile))
+    )
+
+  # delete stack-frame if empty
+  (when (empty? (in stack-frame :children))
+    (def to-retile (in stack-frame :parent))
+    (util/with-activation-hooks window-man
+                                (:close stack-frame))
+    (:layouts-changed window-man [(:get-layout to-retile)])
+    # ev/spawn to put the :retile call in the event queue
+    (ev/spawn
+     (:retile window-man to-retile))
+    )
+  )
+
+(defn tall-on-window-removed [self win]
+  (def {:window-manager window-man} self)
+  (tall-cleanup-layout window-man win))
 
 ### Window control functions
 
@@ -187,6 +203,7 @@
                hwnd (in cur-win :hwnd)]
       (MoveWindowToDesktopNumber hwnd n)
       # FIXME: old frame be left, call tall-on-window-removed?
+      (tall-cleanup-layout window-man cur-win)
       (:retile window-man (:get-top-frame cur-fr))
       # FIXME: moved window should be controlled
       # (GoToDesktopNumber n)
