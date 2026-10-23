@@ -46,10 +46,21 @@
 (ffi/defbind MoveWindowToDesktopNumber :uint32 [hwnd :ptr n :uint32])
 (ffi/defbind GetCurrentDesktopNumber :uint32 [])
 (ffi/defbind GetDesktopCount :uint32 [])
-(ffi/defbind CreateDesktop :uint32 [])
 
-(while (< (GetDesktopCount) 9)
-  (CreateDesktop))
+# CreateDesktop only exists in the Windows 11 builds of
+# VirtualDesktopAccessor.dll; the Windows 10 build lacks it.
+(def- create-desktop
+  (when-let [native (ffi/native "VirtualDesktopAccessor.dll")
+             ptr (ffi/lookup native "CreateDesktop")]
+    (def sig (ffi/signature :default :int32))
+    (fn [] (ffi/call ptr sig))))
+
+(if create-desktop
+  # Bounded, so a failing CreateDesktop can't hang jwno at startup
+  (for _ 0 9
+    (when (>= (GetDesktopCount) 9) (break))
+    (create-desktop))
+  (log/info "CreateDesktop not available; create virtual desktops manually"))
 
 (defn tall-set-desktop [n]
   (cond
