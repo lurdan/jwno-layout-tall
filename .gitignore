@@ -1,2 +1,4 @@
 *.exe
 *.dll
+tall-debug.log
+tall-debug.log.old
