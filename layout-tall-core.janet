@@ -44,10 +44,15 @@
     (cond
       # top still holds windows directly
       (not (frame-node? (first children)))
-      (when (= (length children) 1)
-        (:split top-frame :horizontal)
-        (put (in win :tags) :frame (get-in top-frame [:children 1]))
-        (retile-hook window-man top-frame))
+      (if (= (length children) 1)
+        (do
+          (:split top-frame :horizontal)
+          (put (in win :tags) :frame (get-in top-frame [:children 1]))
+          (retile-hook window-man top-frame))
+        # Several windows piled up in one frame (not a Tall shape):
+        # rebuild once the new window has been added.
+        (when-let [arrange-hook (in self :async-arrange-hook)]
+          (arrange-hook window-man top-frame)))
 
       # top is split into master / stack
       (frame-node? (get-in top-frame [:children 1]))
@@ -115,6 +120,29 @@
         :close-frame-hook close-hook
         :async-retile-hook retile-hook} self)
   (tall-cleanup-layout window-man win close-hook retile-hook))
+
+(defn tall-arrange
+  ``Rebuild `top-frame` into the Tall shape from the windows it holds.
+  The first window (tree order) becomes master; the rest go to the stack.``
+  [window-man top-frame]
+  (def wins (:get-all-windows top-frame))
+  (def focused (:get-current-window top-frame))
+  (:flatten top-frame)
+  (when (>= (length wins) 2)
+    # :split moves all windows into the first sub-frame (master)
+    (:split top-frame :horizontal)
+    (def stack (get-in top-frame [:children 1]))
+    (def rest (slice wins 1))
+    (if (= 1 (length rest))
+      (:add-child stack (first rest))
+      (do
+        (:split stack :vertical (length rest))
+        (eachp [i w] rest
+          (:add-child (get-in stack [:children i]) w)))))
+  (:layouts-changed window-man [(:get-layout top-frame)])
+  (:retile window-man top-frame)
+  (when focused
+    (:activate focused)))
 
 (defn tall-swap-master
   ``Swap the focused window with the master window.

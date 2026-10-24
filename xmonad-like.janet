@@ -59,6 +59,7 @@
 
     (k "${MOD} + Shift + Q" :quit)
     (k "${MOD} + N"         :retile)
+    (k "${MOD} + Shift + N" :tall-arrange)
     (k "${MOD} + Shift + C" :close-window-or-frame)
     (k "${MOD} + Enter"     :swap-master)
     (k "${MOD} + Space"     :toggle-maximize)

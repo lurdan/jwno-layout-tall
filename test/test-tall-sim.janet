@@ -49,20 +49,36 @@
         (:get-current-frame (or (in self :current-child) (first children)))))
 
     :split
-    (fn [self _dir]
+    (fn [self _dir &opt n]
+      (default n 2)
       (when (and (not (empty? (in self :children)))
                  (frame? (get-in self [:children 0])))
         (error "frame is already split"))
       (def wins (in self :children))
       (def cur (in self :current-child))
       (def a (make-frame self))
-      (def b (make-frame self))
+      (def others (seq [_ :range [1 n]] (make-frame self)))
       (put a :children (array/slice wins))
       (each w wins (put w :parent a))
       (put a :current-child (if (empty? wins) nil (or cur (first wins))))
-      (put self :children @[a b])
+      (put self :children @[a ;others])
       (put self :current-child a)
       self)
+
+    :get-all-windows
+    (fn [self &opt acc]
+      (default acc @[])
+      (each c (in self :children)
+        (if (window? c) (array/push acc c) (:get-all-windows c acc)))
+      acc)
+
+    :flatten
+    (fn [self]
+      (def cur (:get-current-window self))
+      (def wins (:get-all-windows self))
+      (each w wins (put w :parent self))
+      (put self :children wins)
+      (put self :current-child (or cur (first wins))))
 
     :insert-sub-frame
     (fn [self n]
@@ -149,6 +165,11 @@
               :hook-manager @{:call-filter-hook (fn [& _] true)}
               :close-frame-hook (fn [_wm f] (f))
               :async-retile-hook (fn [wm fr] (:retile wm fr))})
+  # jwno runs the arrange hook after the new window is added; emulate that
+  # by queuing it and flushing in open-window.
+  (def pending @[])
+  (put self :async-arrange-hook (fn [wm fr] (array/push pending [wm fr])))
+  (put self :pending pending)
   {:top top :wm wm :self self})
 
 # what jwno's wm-add-hwnd does around the :window-created hook
@@ -161,6 +182,9 @@
       (do (put (in w :tags) :frame nil) (:get-current-frame fr))
       (:get-current-frame top)))
   (:add-child target w)
+  (def pending (in self :pending))
+  (each [wm fr] pending (core/tall-arrange wm fr))
+  (array/clear pending)
   w)
 
 # what jwno's wm-remove-hwnd / purge does around the :window-removed hook
@@ -309,6 +333,59 @@
   (def wins (seq [k :range [0 3]] (open-window env (string k))))
   (close-window env (wins 1))
   (check "move: tree ok" (empty? (tree-problems top)) (string/join (tree-problems top) ", ")))
+
+### Startup: windows piled up in one frame get rebuilt into Tall
+
+(defn pile-up [env names]
+  (def top (env :top))
+  (def wins (map make-win names))
+  (each w wins (:add-child top w))
+  wins)
+
+(each n [2 3 4]
+  (def lbl (string/format "arrange %d piled windows" n))
+  (scenario lbl
+    (def env (make-env))
+    (def top (env :top))
+    (def wins (pile-up env (seq [k :range [0 n]] (string k))))
+    (core/tall-arrange (env :wm) top)
+    (check (string lbl ": tree ok") (empty? (tree-problems top)) (string/join (tree-problems top) ", "))
+    (check (string lbl ": first window is master") (= (master-win top) (wins 0)))
+    (check (string lbl ": all windows kept") (= n (length (all-windows top))))
+    (def stack (get-in top [:children 1]))
+    (check (string lbl ": stack shape")
+           (if (= n 2)
+             (= (get-in stack [:children 0]) (wins 1))
+             (= (- n 1) (length (in stack :children)))))
+    # the arranged layout keeps working
+    (def extra (open-window env "extra"))
+    (check (string lbl ": open after arrange ok") (empty? (tree-problems top)) (string/join (tree-problems top) ", "))
+    (close-window env (wins 0))
+    (check (string lbl ": close master after arrange ok") (empty? (tree-problems top)) (string/join (tree-problems top) ", "))))
+
+(scenario "new window on a pile triggers arrange"
+  (def env (make-env))
+  (def top (env :top))
+  (pile-up env ["a" "b"])
+  (open-window env "c")
+  (check "pile+new: tree ok" (empty? (tree-problems top)) (string/join (tree-problems top) ", "))
+  (check "pile+new: 3 windows" (= 3 (length (all-windows top))))
+  (check "pile+new: top is split" (frame? (get-in top [:children 0]))))
+
+(scenario "arrange an already Tall layout is stable"
+  (def env (make-env))
+  (def top (env :top))
+  (def wins (seq [k :range [0 4]] (open-window env (string k))))
+  (core/tall-arrange (env :wm) top)
+  (check "re-arrange: tree ok" (empty? (tree-problems top)) (string/join (tree-problems top) ", "))
+  (check "re-arrange: master kept" (= (master-win top) (wins 0))))
+
+(scenario "arrange a single window"
+  (def env (make-env))
+  (def top (env :top))
+  (pile-up env ["only"])
+  (core/tall-arrange (env :wm) top)
+  (check "single: window stays in top" (= 1 (length (in top :children)))))
 
 ### Result
 

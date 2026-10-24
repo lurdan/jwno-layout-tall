@@ -12,6 +12,7 @@
 #
 
 (use jw32/_uiautomation)
+(use jw32/_winuser)
 
 (import jwno/util)
 (import jwno/auto-layout)
@@ -92,6 +93,30 @@
       (:add-hwnd window-man hwnd)
       (log/info (string "Moved window to Desktop " (+ n 1))))))
 
+### Startup
+
+(defn tall-adopt-existing-windows
+  ``jwno only manages a window once it gets focus, so windows that were
+  already open when jwno started stay unmanaged (or pile up in a single
+  frame). Offer every top-level window to jwno, using its own filters,
+  so they are laid out by the :window-created hook.``
+  [window-man]
+  # Collect first: calling into jwno inside the EnumChildWindows callback
+  # is unsafe (see jwno's example/bounce.janet).
+  (def hwnds @[])
+  (EnumChildWindows nil (fn [hwnd] (array/push hwnds hwnd) 1))
+  # z-order, topmost first: the topmost window becomes master
+  (each hwnd hwnds
+    (try
+      (:window-opened window-man hwnd)
+      ((err _fib)
+       (log/debug "tall: failed to adopt %n: %n" hwnd err)))))
+
+(defn tall-arrange-current [window-man]
+  (when-let [cur-fr (:get-current-frame (in window-man :root))]
+    (util/with-activation-hooks window-man
+      (core/tall-arrange window-man (:get-top-frame cur-fr)))))
+
 ### Layout management
 
 (defn tall-enable [self]
@@ -105,6 +130,8 @@
      (fn [] (tall-toggle-maximize window-man)))
   (:add-command command-man :swap-master
      (fn [] (tall-swap-master window-man)))
+  (:add-command command-man :tall-arrange
+     (fn [] (tall-arrange-current window-man)))
   (:add-command command-man :set-desktop
      (fn [n] (tall-set-desktop n)))
   (:add-command command-man :move-to-desktop
@@ -121,7 +148,10 @@
          (fn [& args] ((in self :on-window-created) self ;args)))
       (:add-hook hook-man :window-removed
          (fn [& args] ((in self :on-window-removed) self ;args)))
-     ]))
+     ])
+
+  # Runs after jwno finishes loading the config (monitors are set up then)
+  (ev/spawn (tall-adopt-existing-windows window-man)))
 
 (defn tall-disable [self]
   (def {:window-manager window-man
@@ -131,6 +161,7 @@
 
   (:remove-command command-man :toggle-maximize)
   (:remove-command command-man :swap-master)
+  (:remove-command command-man :tall-arrange)
   (:remove-command command-man :set-desktop)
   (:remove-command command-man :move-to-desktop)
 
@@ -159,5 +190,9 @@
                          (util/with-activation-hooks wm (close-fn)))
      :async-retile-hook (fn [wm frame]
                           (ev/spawn (:retile wm frame)))
+     :async-arrange-hook (fn [wm frame]
+                           (ev/spawn
+                             (util/with-activation-hooks wm
+                               (core/tall-arrange wm frame))))
     }
    tall-proto))
