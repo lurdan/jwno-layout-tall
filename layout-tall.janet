@@ -143,12 +143,14 @@
                     :filter-auto-layout-window
                     auto-layout/auto-layout-default-filter)))
 
+  # [hook-name hook-fn] pairs: jwno's :remove-hook needs both
   (put self :hook-fns
-     [(:add-hook hook-man :window-created
-         (fn [& args] ((in self :on-window-created) self ;args)))
-      (:add-hook hook-man :window-removed
-         (fn [& args] ((in self :on-window-removed) self ;args)))
-     ])
+     @[[:window-created
+        (:add-hook hook-man :window-created
+           (fn [& args] ((in self :on-window-created) self ;args)))]
+       [:window-removed
+        (:add-hook hook-man :window-removed
+           (fn [& args] ((in self :on-window-removed) self ;args)))]])
 
   # Runs after jwno finishes loading the config (monitors are set up then)
   (ev/spawn (tall-adopt-existing-windows window-man)))
@@ -165,9 +167,9 @@
   (:remove-command command-man :set-desktop)
   (:remove-command command-man :move-to-desktop)
 
-  (each hook hook-fns
-    (:remove-hook hook-man hook))
-  (put self :hook-fns []))
+  (each [hook-name hook-fn] hook-fns
+    (:remove-hook hook-man hook-name hook-fn))
+  (put self :hook-fns @[]))
 
 (def tall-proto
   @{:on-window-created core/tall-on-window-created
