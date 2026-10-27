@@ -6,6 +6,9 @@
 (use jw32/_uiautomation)
 
 (def mod-key "Win")
+# Start with the Tall debug log on? (toggle any time with ${MOD} + Shift + D;
+# the log is written to tall-debug.log next to this config file)
+(def tall-debug-on-start false)
 (def keyboard-layout :qwerty)
 
 (def dir-keys
@@ -59,6 +62,8 @@
 
     (k "${MOD} + Shift + Q" :quit)
     (k "${MOD} + N"         :retile)
+    (k "${MOD} + Shift + N" :tall-arrange)
+    (k "${MOD} + Shift + D" :tall-debug)
     (k "${MOD} + Shift + C" :close-window-or-frame)
     (k "${MOD} + Enter"     :swap-master)
     (k "${MOD} + Space"     :toggle-maximize)
@@ -109,3 +114,9 @@
 (import layout-tall)
 (def layout-tall (layout-tall/tall jwno/context))
 (:enable layout-tall)
+
+# Debug log for the Tall layout (after layout-tall, so its commands get logged)
+(import tall-debug)
+(def tall-debug (tall-debug/tall-debug jwno/context))
+(when tall-debug-on-start
+  (:enable tall-debug))

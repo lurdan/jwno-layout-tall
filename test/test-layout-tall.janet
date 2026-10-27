@@ -8,7 +8,7 @@
 ### Fake frame/window objects
 
 (defn make-frame [parent]
-  (def f @{:parent parent :children @[] :monitor nil :current-window nil})
+  (def f @{:type :frame :parent parent :children @[] :monitor nil :current-window nil})
 
   (put f :attached?
     (fn [self] (not (nil? (in self :parent)))))
@@ -68,7 +68,7 @@
   f)
 
 (defn make-win [parent]
-  (def w @{:parent parent :tags @{}})
+  (def w @{:type :window :parent parent :tags @{}})
   (put w :activate (fn [self] nil))
   w)
 
@@ -280,13 +280,12 @@
   (expect "nil-desktop: top unchanged"
           (= (length (in top :children)) 1)))
 
-# 1 win in top-frame → split horizontal, new win goes to stack slot
+# 1 win held directly by top-frame (jwno's real shape) → split horizontal,
+# new win goes to stack slot
 (let [top (make-frame nil)
       _ (put top :monitor :fake-monitor)
-      master (make-frame top)
-      _ (array/push (in top :children) master)
-      win-existing (make-win master)
-      _ (array/push (in master :children) win-existing)
+      win-existing (make-win top)
+      _ (array/push (in top :children) win-existing)
       root @{:get-current-frame-on-desktop (fn [self id] top)}
       self (make-self root)
       new-win @{:tags @{}}]
